@@ -1,0 +1,8 @@
+{
+  "name": "duhlab-core",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

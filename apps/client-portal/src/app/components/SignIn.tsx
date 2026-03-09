@@ -1,0 +1,183 @@
+import { useState } from 'react';
+import { motion } from 'motion/react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { API_URL, publicAnonKey } from '../../utils/supabase';
+
+interface SignInProps {
+  onSignIn: (accessToken: string, userData: any, isNewUser: boolean) => void;
+}
+
+export function SignIn({ onSignIn }: SignInProps) {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      if (isSignUp) {
+        if (password !== confirmPassword) {
+          setError('Passwords do not match!');
+          setIsLoading(false);
+          return;
+        }
+
+        // Real Sign Up API Call
+        const res = await fetch(`${API_URL}/signup`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          // We pass a default name for now, they can update it in onboarding
+          body: JSON.stringify({ email, password, name: email.split('@')[0] }),
+        });
+        
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to sign up');
+        
+        // After successful signup, we log them in immediately to get the token
+        const loginRes = await fetch(`${API_URL}/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({ email, password }),
+        });
+        
+        const loginData = await loginRes.json();
+        if (!loginRes.ok) throw new Error(loginData.error || 'Failed to login after signup');
+
+        onSignIn(loginData.accessToken, loginData.user, true);
+
+      } else {
+        // Real Sign In API Call
+        const res = await fetch(`${API_URL}/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Invalid credentials');
+
+        onSignIn(data.accessToken, data.user, false);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleMode = () => {
+    setIsSignUp(!isSignUp);
+    setPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    setError('');
+  };
+
+  // ... (Keep the rest of the return statement exactly the same, 
+  // just add a small error message display above the Email field if `error` exists)
+  return (
+    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#F5F7FA' }}>
+      <div className="w-[560px] bg-white rounded-2xl p-12 shadow-[0px_12px_24px_rgba(0,0,0,0.05)] border border-[#EAEAEA]">
+        {/* Logo and Titles omitted for brevity - Keep your existing UI here! */}
+        <div className="text-center mb-8">
+          <h1 className="tracking-tight mb-2 font-bold text-3xl text-[#1A45FF]" style={{ fontFamily: 'Outfit, sans-serif' }}>duhLAB</h1>
+          <p className="text-[#636E72]">Research Platform</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {error && (
+            <div className="p-3 bg-red-50 text-red-500 rounded-lg text-sm font-medium">
+              {error}
+            </div>
+          )}
+          
+          {/* Email Field */}
+          <div>
+            <label className="block mb-2 text-[#374151] font-medium">Email Address</label>
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2"
+              />
+            </div>
+          </div>
+
+          {/* Password Field */}
+          <div>
+            <label className="block mb-2 text-[#374151] font-medium">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full pl-12 pr-12 py-3 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2"
+              />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Confirm Password Field */}
+          {isSignUp && (
+            <div>
+              <label className="block mb-2 text-[#374151] font-medium">Confirm Password</label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="w-full pl-12 pr-12 py-3 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2"
+                />
+                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
+                  {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-4 rounded-full font-bold text-gray-900 bg-[#FFC045] hover:scale-105 transition-all shadow-[0px_4px_0px_#E1A32A] disabled:opacity-50"
+          >
+            {isLoading ? 'Processing...' : isSignUp ? 'Create Account' : 'Sign In'}
+          </button>
+        </form>
+
+        <div className="mt-8 text-center text-gray-500">
+          {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+          <button type="button" onClick={toggleMode} className="text-[#1A45FF] font-semibold hover:underline">
+            {isSignUp ? 'Sign In' : 'Sign Up'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
