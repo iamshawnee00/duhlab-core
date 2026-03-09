@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import logoImage from 'figma:asset/9a9a4a1572c149f19593b28a48b681f3a8ed70bf.png';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { publicAnonKey } from '../utils/supabase/info';
+
+// Pointing explicitly to our local Node.js backend
+const API_URL = "http://localhost:3001/make-server-e7b4487d";
 
 interface SignUpScreenProps {
   onSignUp: () => void;
@@ -39,8 +42,9 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
     setIsLoading(true);
 
     try {
+      // Hitting the specific CONSUMER signup door
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-e7b4487d/signup`,
+        `${API_URL}/consumer/signup`,
         {
           method: 'POST',
           headers: {
@@ -71,7 +75,6 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
 
   return (
     <div className="h-full w-full bg-[#F5F7FA] flex flex-col relative overflow-y-auto">
-      {/* Main Content */}
       <div className="flex-1 flex items-center justify-center px-6 py-8">
         <div className="w-full max-w-md">
           {/* Logo */}
@@ -94,11 +97,8 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
           </div>
 
           {/* Sign Up Card */}
-          <div 
-            className="bg-white rounded-[16px] border border-[#EAEAEA] shadow-[0px_4px_12px_rgba(0,0,0,0.05)] p-6 mb-6"
-          >
+          <div className="bg-white rounded-[16px] border border-[#EAEAEA] shadow-[0px_4px_12px_rgba(0,0,0,0.05)] p-6 mb-6">
             <form onSubmit={handleSubmit}>
-              {/* Error Message */}
               {error && (
                 <div className="mb-4 p-3 bg-[#FF4757]/10 border border-[#FF4757] rounded-[8px]">
                   <p className="text-[#FF4757] font-sans" style={{ fontSize: '14px', fontWeight: 400 }}>
@@ -107,13 +107,8 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
                 </div>
               )}
 
-              {/* Name Input */}
               <div className="mb-4">
-                <label 
-                  htmlFor="name" 
-                  className="block text-[#192A56] font-sans mb-2" 
-                  style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}
-                >
+                <label htmlFor="name" className="block text-[#192A56] font-sans mb-2" style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}>
                   Full Name
                 </label>
                 <input
@@ -129,13 +124,8 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
                 />
               </div>
 
-              {/* Email Input */}
               <div className="mb-4">
-                <label 
-                  htmlFor="email" 
-                  className="block text-[#192A56] font-sans mb-2" 
-                  style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}
-                >
+                <label htmlFor="email" className="block text-[#192A56] font-sans mb-2" style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}>
                   Email
                 </label>
                 <input
@@ -151,13 +141,8 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
                 />
               </div>
 
-              {/* Password Input */}
               <div className="mb-4">
-                <label 
-                  htmlFor="password" 
-                  className="block text-[#192A56] font-sans mb-2" 
-                  style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}
-                >
+                <label htmlFor="password" className="block text-[#192A56] font-sans mb-2" style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}>
                   Password
                 </label>
                 <input
@@ -173,13 +158,8 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
                 />
               </div>
 
-              {/* Confirm Password Input */}
               <div className="mb-6">
-                <label 
-                  htmlFor="confirmPassword" 
-                  className="block text-[#192A56] font-sans mb-2" 
-                  style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}
-                >
+                <label htmlFor="confirmPassword" className="block text-[#192A56] font-sans mb-2" style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}>
                   Confirm Password
                 </label>
                 <input
@@ -195,7 +175,6 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
                 />
               </div>
 
-              {/* Terms & Conditions */}
               <div className="flex items-start gap-2 mb-6">
                 <input
                   type="checkbox"
@@ -205,23 +184,11 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
                   className="mt-1 w-4 h-4 text-[#1A45FF] border-[#EAEAEA] rounded focus:ring-[#1A45FF]"
                   disabled={isLoading}
                 />
-                <label 
-                  htmlFor="terms" 
-                  className="text-[#636E72] font-sans" 
-                  style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}
-                >
-                  I agree to the{' '}
-                  <button type="button" className="text-[#1A45FF] hover:underline">
-                    Terms & Conditions
-                  </button>
-                  {' '}and{' '}
-                  <button type="button" className="text-[#1A45FF] hover:underline">
-                    Privacy Policy
-                  </button>
+                <label htmlFor="terms" className="text-[#636E72] font-sans" style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}>
+                  I agree to the <button type="button" className="text-[#1A45FF] hover:underline">Terms & Conditions</button> and <button type="button" className="text-[#1A45FF] hover:underline">Privacy Policy</button>
                 </label>
               </div>
 
-              {/* Sign Up Button */}
               <button
                 type="submit"
                 disabled={isLoading}
@@ -233,7 +200,6 @@ export function SignUpScreen({ onSignUp, onSwitchToLogin }: SignUpScreenProps) {
             </form>
           </div>
 
-          {/* Login Link */}
           <div className="text-center">
             <span className="text-[#636E72] font-sans" style={{ fontSize: '16px', fontWeight: 400 }}>
               Already have an account?{' '}

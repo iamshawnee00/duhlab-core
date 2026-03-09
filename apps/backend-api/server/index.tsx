@@ -4,7 +4,6 @@ import { logger } from "hono/logger";
 import { serve } from "@hono/node-server";
 import { createClient } from "@supabase/supabase-js";
 import 'dotenv/config'; 
-import * as kv from "./kv_store.tsx";
 
 const app = new Hono();
 
@@ -41,6 +40,7 @@ app.post("/make-server-e7b4487d/consumer/signup", async (c: any) => {
     const { data: existing } = await supabaseAdmin.from('users').select('*').eq('email', email).limit(1);
     if (existing && existing.length > 0) return c.json({ error: "Email already in use" }, 400);
 
+    // 1. Create Auth User
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email, password, user_metadata: { name, role: 'consumer' }, email_confirm: true
     });
@@ -50,16 +50,23 @@ app.post("/make-server-e7b4487d/consumer/signup", async (c: any) => {
     const userId = data.user.id;
     const userData = { id: userId, email, name, role: 'consumer', created_at: new Date().toISOString() };
 
-    await supabaseAdmin.from('users').insert([userData]);
-    await supabaseAdmin.from('user_coins').insert([{ user_id: userId, coins: 0 }]);
+    // 2. Insert into PostgreSQL
+    const { error: dbError } = await supabaseAdmin.from('users').insert([userData]);
     
-    await kv.set(`user:${userId}`, userData);
-    await kv.set(`coins:${userId}`, 0);
-    await kv.set(`rewards:${userId}`, { totalCoins: 0, surveysCompleted: 0, insights: [] });
+    // THE SAFETY NET: If Postgres fails, delete the auth user so they aren't stuck
+    if (dbError) {
+      console.error("DB Insert Error:", dbError);
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      return c.json({ error: "Failed to setup database profile." }, 500);
+    }
+
+    // 3. Setup Economy
+    await supabaseAdmin.from('user_coins').insert([{ user_id: userId, coins: 0 }]);
 
     return c.json({ success: true, userId, message: "Consumer account created" });
   } catch (error) {
-    return c.json({ error: "Failed to create account" }, 500);
+    console.error("Signup Error:", error);
+    return c.json({ error: "Internal server error" }, 500);
   }
 });
 
@@ -78,9 +85,8 @@ app.post("/make-server-e7b4487d/consumer/login", async (c: any) => {
     const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
     if (error) return c.json({ error: "Invalid credentials" }, 401);
 
-    // FIX: Using "as any" to bypass strict TypeScript checking for MVP speed
-    const coinsRes = await supabaseAdmin.from('user_coins').select('coins').eq('user_id', data.user.id).single();
-    const coins = (coinsRes.data as any)?.coins ?? 0;
+    const { data: coinsData } = await supabaseAdmin.from('user_coins').select('coins').eq('user_id', data.user.id).single();
+    const coins = coinsData ? (coinsData as any).coins : 0;
 
     return c.json({ success: true, userId: data.user.id, accessToken: data.session.access_token, user: userRecord, coins });
   } catch (error) {
@@ -100,6 +106,7 @@ app.post("/make-server-e7b4487d/client/signup", async (c: any) => {
     const { data: existing } = await supabaseAdmin.from('users').select('*').eq('email', email).limit(1);
     if (existing && existing.length > 0) return c.json({ error: "Email already in use" }, 400);
 
+    // 1. Create Auth User
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email, password, user_metadata: { name, role: 'client' }, email_confirm: true
     });
@@ -109,12 +116,20 @@ app.post("/make-server-e7b4487d/client/signup", async (c: any) => {
     const userId = data.user.id;
     const userData = { id: userId, email, name: name || "Enterprise User", role: 'client', created_at: new Date().toISOString() };
 
-    await supabaseAdmin.from('users').insert([userData]);
-    await kv.set(`user:${userId}`, userData);
+    // 2. Insert into PostgreSQL
+    const { error: dbError } = await supabaseAdmin.from('users').insert([userData]);
+    
+    // THE SAFETY NET
+    if (dbError) {
+      console.error("DB Insert Error:", dbError);
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      return c.json({ error: "Failed to setup database profile." }, 500);
+    }
 
     return c.json({ success: true, userId, message: "Client account created" });
   } catch (error) {
-    return c.json({ error: "Failed to create client account" }, 500);
+    console.error("Signup Error:", error);
+    return c.json({ error: "Internal server error" }, 500);
   }
 });
 
@@ -156,6 +171,7 @@ app.post("/make-server-e7b4487d/guest-login", async (c: any) => {
       if (error) return c.json({ error: "Failed" }, 500);
       userId = data.user.id;
       const userData = { id: userId, email: guestEmail, name: "Guest", role: 'consumer', created_at: new Date().toISOString() };
+      
       await supabaseAdmin.from('users').insert([userData]);
       await supabaseAdmin.from('user_coins').insert([{ user_id: userId, coins: 0 }]);
     }
@@ -164,12 +180,9 @@ app.post("/make-server-e7b4487d/guest-login", async (c: any) => {
     if (error) return c.json({ error: "Failed to login as guest" }, 500);
 
     const { data: userRecord } = await supabaseAdmin.from('users').select('*').eq('id', data.user.id).single();
+    const { data: coinsData } = await supabaseAdmin.from('user_coins').select('coins').eq('user_id', data.user.id).single();
     
-    // FIX: Using "as any" to bypass strict TypeScript checking for MVP speed
-    const coinsRes = await supabaseAdmin.from('user_coins').select('coins').eq('user_id', data.user.id).single();
-    const coins = (coinsRes.data as any)?.coins ?? 0;
-
-    return c.json({ success: true, userId: data.user.id, accessToken: data.session.access_token, user: userRecord, coins });
+    return c.json({ success: true, userId: data.user.id, accessToken: data.session.access_token, user: userRecord, coins: coinsData ? (coinsData as any).coins : 0 });
   } catch (error) {
     return c.json({ error: "Failed" }, 500);
   }
@@ -180,7 +193,11 @@ app.get("/make-server-e7b4487d/session", async (c: any) => {
   if (!token) return c.json({ error: "No token" }, 401);
   const { data: { user }, error } = await supabaseClient.auth.getUser(token);
   if (error || !user) return c.json({ error: "Invalid session" }, 401);
-  return c.json({ success: true, userId: user.id });
+  
+  // Fetch from postgres instead of KV
+  const { data: userData } = await supabaseAdmin.from('users').select('*').eq('id', user.id).single();
+  
+  return c.json({ success: true, userId: user.id, user: userData });
 });
 
 // Start the Node.js Server

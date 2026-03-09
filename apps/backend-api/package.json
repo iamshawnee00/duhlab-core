@@ -17,6 +17,10 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.11"
+    "@hono/node-server": "^1.19.11",
+    "@supabase/supabase-js": "^2.99.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "hono": "^4.12.5"
   }
 }

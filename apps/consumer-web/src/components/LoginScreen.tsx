@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import logoImage from 'figma:asset/9a9a4a1572c149f19593b28a48b681f3a8ed70bf.png';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { publicAnonKey } from '../utils/supabase/info';
+
+// Pointing explicitly to our local Node.js backend
+const API_URL = "http://localhost:3001/make-server-e7b4487d";
 
 interface LoginScreenProps {
   onLogin: (userId: string, accessToken: string, userData: any, coins: number) => void;
@@ -19,10 +22,11 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
     setIsLoading(true);
 
     try {
-      console.log('Attempting login for:', email);
+      console.log('Attempting consumer login for:', email);
       
+      // Hitting the specific CONSUMER login door
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-e7b4487d/login`,
+        `${API_URL}/consumer/login`,
         {
           method: 'POST',
           headers: {
@@ -33,9 +37,7 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
         }
       );
 
-      console.log('Login response status:', response.status);
       const data = await response.json();
-      console.log('Login response data:', data);
 
       if (!response.ok) {
         setError(data.error || 'Login failed');
@@ -44,18 +46,11 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
       }
 
       if (!data.accessToken) {
-        console.error('No access token received:', data);
         setError('Authentication failed - no token received');
         setIsLoading(false);
         return;
       }
 
-      console.log('Login successful:', {
-        userId: data.userId,
-        hasToken: !!data.accessToken,
-        coins: data.coins
-      });
-      
       onLogin(data.userId, data.accessToken, data.user, data.coins);
     } catch (err) {
       console.error('Login error:', err);
@@ -72,7 +67,7 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
       console.log('Attempting guest login...');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-e7b4487d/guest-login`,
+        `${API_URL}/guest-login`,
         {
           method: 'POST',
           headers: {
@@ -82,9 +77,7 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
         }
       );
 
-      console.log('Guest login response status:', response.status);
       const data = await response.json();
-      console.log('Guest login response data:', data);
 
       if (!response.ok) {
         setError(data.error || 'Guest login failed');
@@ -93,18 +86,11 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
       }
 
       if (!data.accessToken) {
-        console.error('No access token received:', data);
         setError('Authentication failed - no token received');
         setIsLoading(false);
         return;
       }
 
-      console.log('Guest login successful:', {
-        userId: data.userId,
-        hasToken: !!data.accessToken,
-        coins: data.coins
-      });
-      
       onLogin(data.userId, data.accessToken, data.user, data.coins);
     } catch (err) {
       console.error('Guest login error:', err);
@@ -115,7 +101,6 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
 
   return (
     <div className="h-full w-full bg-[#F5F7FA] flex flex-col relative">
-      {/* Main Content */}
       <div className="flex-1 flex items-center justify-center px-6 py-8">
         <div className="w-full max-w-md">
           {/* Logo */}
@@ -127,7 +112,6 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
             />
           </div>
 
-          {/* Welcome Text */}
           <div className="text-center mb-8">
             <h1 className="text-[#192A56] font-heading mb-2" style={{ fontSize: '24px', fontWeight: 700, lineHeight: '32px' }}>
               Welcome Back
@@ -137,12 +121,8 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
             </p>
           </div>
 
-          {/* Login Card */}
-          <div 
-            className="bg-white rounded-[16px] border border-[#EAEAEA] shadow-[0px_4px_12px_rgba(0,0,0,0.05)] p-6 mb-6"
-          >
+          <div className="bg-white rounded-[16px] border border-[#EAEAEA] shadow-[0px_4px_12px_rgba(0,0,0,0.05)] p-6 mb-6">
             <form onSubmit={handleSubmit}>
-              {/* Error Message */}
               {error && (
                 <div className="mb-4 p-3 bg-[#FF4757]/10 border border-[#FF4757] rounded-[8px]">
                   <p className="text-[#FF4757] font-sans" style={{ fontSize: '14px', fontWeight: 400 }}>
@@ -151,13 +131,8 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
                 </div>
               )}
 
-              {/* Email Input */}
               <div className="mb-4">
-                <label 
-                  htmlFor="email" 
-                  className="block text-[#192A56] font-sans mb-2" 
-                  style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}
-                >
+                <label htmlFor="email" className="block text-[#192A56] font-sans mb-2" style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}>
                   Email
                 </label>
                 <input
@@ -173,13 +148,8 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
                 />
               </div>
 
-              {/* Password Input */}
               <div className="mb-6">
-                <label 
-                  htmlFor="password" 
-                  className="block text-[#192A56] font-sans mb-2" 
-                  style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}
-                >
+                <label htmlFor="password" className="block text-[#192A56] font-sans mb-2" style={{ fontSize: '12px', fontWeight: 400, lineHeight: '16px' }}>
                   Password
                 </label>
                 <input
@@ -195,7 +165,6 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
                 />
               </div>
 
-              {/* Forgot Password Link */}
               <div className="text-right mb-6">
                 <button
                   type="button"
@@ -207,7 +176,6 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
                 </button>
               </div>
 
-              {/* Login Button */}
               <button
                 type="submit"
                 disabled={isLoading}
@@ -218,7 +186,6 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
               </button>
             </form>
 
-            {/* Divider */}
             <div className="flex items-center gap-4 my-6">
               <div className="flex-1 h-px bg-[#EAEAEA]"></div>
               <span className="text-[#636E72] font-sans" style={{ fontSize: '12px', fontWeight: 400 }}>
@@ -227,7 +194,6 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
               <div className="flex-1 h-px bg-[#EAEAEA]"></div>
             </div>
 
-            {/* Guest Login Button */}
             <button
               type="button"
               onClick={handleGuestLogin}
@@ -239,7 +205,6 @@ export function LoginScreen({ onLogin, onSwitchToSignup }: LoginScreenProps) {
             </button>
           </div>
 
-          {/* Sign Up Link */}
           <div className="text-center">
             <span className="text-[#636E72] font-sans" style={{ fontSize: '16px', fontWeight: 400 }}>
               Don't have an account?{' '}
