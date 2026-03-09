@@ -26,6 +26,7 @@ const supabaseClient = createClient(
   process.env.SUPABASE_ANON_KEY ?? '',
 );
 
+app.get("/", (c: any) => c.text("DUHlab API is running perfectly!"));
 app.get("/make-server-e7b4487d/health", (c: any) => c.json({ status: "ok" }));
 
 // ==========================================
@@ -40,7 +41,6 @@ app.post("/make-server-e7b4487d/consumer/signup", async (c: any) => {
     const { data: existing } = await supabaseAdmin.from('users').select('*').eq('email', email).limit(1);
     if (existing && existing.length > 0) return c.json({ error: "Email already in use" }, 400);
 
-    // 1. Create Auth User
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email, password, user_metadata: { name, role: 'consumer' }, email_confirm: true
     });
@@ -50,17 +50,14 @@ app.post("/make-server-e7b4487d/consumer/signup", async (c: any) => {
     const userId = data.user.id;
     const userData = { id: userId, email, name, role: 'consumer', created_at: new Date().toISOString() };
 
-    // 2. Insert into PostgreSQL
     const { error: dbError } = await supabaseAdmin.from('users').insert([userData]);
     
-    // THE SAFETY NET: If Postgres fails, delete the auth user so they aren't stuck
     if (dbError) {
       console.error("DB Insert Error:", dbError);
       await supabaseAdmin.auth.admin.deleteUser(userId);
       return c.json({ error: "Failed to setup database profile." }, 500);
     }
 
-    // 3. Setup Economy
     await supabaseAdmin.from('user_coins').insert([{ user_id: userId, coins: 0 }]);
 
     return c.json({ success: true, userId, message: "Consumer account created" });
@@ -106,7 +103,6 @@ app.post("/make-server-e7b4487d/client/signup", async (c: any) => {
     const { data: existing } = await supabaseAdmin.from('users').select('*').eq('email', email).limit(1);
     if (existing && existing.length > 0) return c.json({ error: "Email already in use" }, 400);
 
-    // 1. Create Auth User
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email, password, user_metadata: { name, role: 'client' }, email_confirm: true
     });
@@ -116,10 +112,8 @@ app.post("/make-server-e7b4487d/client/signup", async (c: any) => {
     const userId = data.user.id;
     const userData = { id: userId, email, name: name || "Enterprise User", role: 'client', created_at: new Date().toISOString() };
 
-    // 2. Insert into PostgreSQL
     const { error: dbError } = await supabaseAdmin.from('users').insert([userData]);
     
-    // THE SAFETY NET
     if (dbError) {
       console.error("DB Insert Error:", dbError);
       await supabaseAdmin.auth.admin.deleteUser(userId);
@@ -151,6 +145,113 @@ app.post("/make-server-e7b4487d/client/login", async (c: any) => {
     return c.json({ success: true, userId: data.user.id, accessToken: data.session.access_token, user: userRecord });
   } catch (error) {
     return c.json({ error: "Failed to login" }, 500);
+  }
+});
+
+app.post("/make-server-e7b4487d/client/complete-onboarding", async (c: any) => {
+  try {
+    const token = c.req.header('Authorization')?.split(' ')[1];
+    if (!token) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+    if (authError || !user) return c.json({ error: "Invalid session" }, 401);
+
+    const { fullName, jobTitle, companyName, industry, metrics } = await c.req.json();
+
+    const { error: dbError } = await supabaseAdmin
+      .from('users')
+      .update({
+        name: fullName,
+        job_title: jobTitle,
+        company_name: companyName,
+        industry: industry,
+        success_metrics: metrics,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', user.id);
+
+    if (dbError) throw dbError;
+
+    return c.json({ success: true, message: "Profile updated successfully" });
+  } catch (error) {
+    console.error("Onboarding Error:", error);
+    return c.json({ error: "Failed to save profile data" }, 500);
+  }
+});
+
+// ==========================================
+// DASHBOARD REAL-TIME DATA
+// ==========================================
+
+app.get("/make-server-e7b4487d/client/dashboard-stats", async (c: any) => {
+  try {
+    const token = c.req.header('Authorization')?.split(' ')[1];
+    if (!token) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+    if (authError || !user) return c.json({ error: "Invalid session" }, 401);
+
+    const { count: activeCount } = await supabaseAdmin
+      .from('campaigns')
+      .select('*', { count: 'exact', head: true })
+      .eq('client_id', user.id)
+      .eq('status', 'active');
+
+    const { data: analytics } = await supabaseAdmin
+      .from('campaigns')
+      .select('id, campaign_analytics(total_completions)')
+      .eq('client_id', user.id);
+
+    const totalCompletions = analytics?.reduce((acc, curr) => {
+      const completions = (curr.campaign_analytics as any)?.total_completions || 0;
+      return acc + completions;
+    }, 0) || 0;
+
+    return c.json({
+      activeResearch: activeCount || 0,
+      totalInsights: totalCompletions || 0,
+      userTrustRating: 0 
+    });
+  } catch (error) {
+    return c.json({ activeResearch: 0, totalInsights: 0, userTrustRating: 0 });
+  }
+});
+
+app.get("/make-server-e7b4487d/client/campaigns", async (c: any) => {
+  try {
+    const token = c.req.header('Authorization')?.split(' ')[1];
+    if (!token) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+    if (authError || !user) return c.json({ error: "Invalid session" }, 401);
+
+    const { data: campaigns, error: dbError } = await supabaseAdmin
+      .from('campaigns')
+      .select(`
+        id, 
+        title, 
+        status, 
+        created_at,
+        campaign_analytics(total_completions)
+      `)
+      .eq('client_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (dbError) throw dbError;
+
+    const formatted = (campaigns || []).map(c => ({
+      id: c.id,
+      name: c.title,
+      status: c.status,
+      responses: (c.campaign_analytics as any)?.total_completions || 0,
+      date: new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      completion: 0 
+    }));
+
+    return c.json(formatted);
+  } catch (error) {
+    return c.json([]);
   }
 });
 
@@ -194,7 +295,6 @@ app.get("/make-server-e7b4487d/session", async (c: any) => {
   const { data: { user }, error } = await supabaseClient.auth.getUser(token);
   if (error || !user) return c.json({ error: "Invalid session" }, 401);
   
-  // Fetch from postgres instead of KV
   const { data: userData } = await supabaseAdmin.from('users').select('*').eq('id', user.id).single();
   
   return c.json({ success: true, userId: user.id, user: userData });

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SignIn } from '@/app/components/SignIn';
 import { OnboardingFlow } from '@/app/components/OnboardingFlow';
 import { Dashboard } from '@/app/components/Dashboard';
+import { API_URL } from '@/utils/supabase';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'signin' | 'onboarding' | 'dashboard'>('signin');
@@ -20,11 +21,26 @@ export default function App() {
     }
   };
 
-  const handleOnboardingComplete = (data: any) => {
-    // In a full build, you would send this 'data' back to Supabase to update the user profile
+  const handleOnboardingComplete = async (data: any) => {
+  try {
+    const response = await fetch(`${API_URL}/client/complete-onboarding`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`, // Use the token we saved during sign-in
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) throw new Error("Failed to save onboarding data");
+
     setUserData({ ...userData, ...data });
     setCurrentView('dashboard');
-  };
+  } catch (error) {
+    console.error(error);
+    alert("There was an error saving your profile. Please try again.");
+  }
+};
 
   return (
     <div className="size-full">
