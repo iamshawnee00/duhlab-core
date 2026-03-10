@@ -8,6 +8,7 @@ import {
   Star,
 } from 'lucide-react';
 import { ResearchTab } from '@/app/components/ResearchTab';
+import { InsightsTab } from '@/app/components/InsightsTab';
 import { SurveyBuilder } from '@/app/components/SurveyBuilder';
 import { API_URL } from '@/utils/supabase';
 
@@ -63,7 +64,7 @@ export function Dashboard({ userData, token }: DashboardProps) {
   return (
     <div className="flex h-screen" style={{ backgroundColor: '#F5F7FA' }}>
       {showBuilder ? (
-        <SurveyBuilder onBack={() => setShowBuilder(false)} />
+        <SurveyBuilder onBack={() => setShowBuilder(false)} token={token} />
       ) : (
         <>
           {/* Sidebar */}
@@ -123,7 +124,7 @@ export function Dashboard({ userData, token }: DashboardProps) {
             </header>
 
             {activeTab === 'research' ? (
-              <ResearchTab onCreateNew={() => setShowBuilder(true)} />
+              <ResearchTab onCreateNew={() => setShowBuilder(true)} token={token} />
             ) : activeTab === 'settings' ? (
               <div className="p-8">
                 <h3 className="text-2xl font-bold mb-4 font-heading text-[#192A56]">Settings</h3>

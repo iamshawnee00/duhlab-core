@@ -1,254 +1,296 @@
 import { useState } from 'react';
-import { DndProvider } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
-import { LeftSidebar } from '@/app/components/builder/LeftSidebar';
-import { CenterCanvas } from '@/app/components/builder/CenterCanvas';
-import { RightSidebar } from '@/app/components/builder/RightSidebar';
-import { FlowBuilder } from '@/app/components/builder/FlowBuilder';
-import { ArrowLeft, Eye, Rocket, LayoutList, Network } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Send, X } from 'lucide-react';
+import { API_URL } from '@/utils/supabase';
 
 interface SurveyBuilderProps {
   onBack: () => void;
+  token: string | null; // Receive the token securely from the Dashboard
 }
 
-export interface Question {
-  id: string;
-  type: 'multiple-choice' | 'rating' | 'open-text' | 'image-select';
-  title: string;
-  description?: string;
-  options?: string[];
-  required: boolean;
-  randomize: boolean;
-  isTrap: boolean;
-  logic?: { answerId: string; nextQuestionId: string }[];
+// Define our powerful Question structure
+interface Question {
+  id: number;
+  text: string;
+  type: 'multiple_choice' | 'text';
+  options: string[];
 }
 
-export function SurveyBuilder({ onBack }: SurveyBuilderProps) {
+export function SurveyBuilder({ onBack, token }: SurveyBuilderProps) {
+  const [title, setTitle] = useState('');
+  const [targetDemographic, setTargetDemographic] = useState('18-35');
   const [questions, setQuestions] = useState<Question[]>([
-    {
-      id: '1',
-      type: 'multiple-choice',
-      title: 'What is your primary reason for using our service?',
-      options: ['Price', 'Quality', 'Convenience', 'Recommendation'],
-      required: true,
-      randomize: false,
-      isTrap: false,
-    },
+    { id: 1, text: '', type: 'multiple_choice', options: ['Option 1', 'Option 2'] }
   ]);
-  
-  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>('1');
-  const [viewMode, setViewMode] = useState<'linear' | 'flow'>('linear');
-  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
-  const [isLeftSidebarVisible, setIsLeftSidebarVisible] = useState(true);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [error, setError] = useState('');
 
-  const selectedQuestion = questions.find((q) => q.id === selectedQuestionId);
-
-  const addQuestion = (type: Question['type']) => {
-    const newQuestion: Question = {
-      id: Date.now().toString(),
-      type,
-      title: 'New Question',
-      options: type === 'multiple-choice' || type === 'image-select' ? ['Option 1', 'Option 2'] : undefined,
-      required: false,
-      randomize: false,
-      isTrap: false,
-    };
-    setQuestions([...questions, newQuestion]);
-    setSelectedQuestionId(newQuestion.id);
+  const handleAddQuestion = () => {
+    setQuestions([
+      ...questions,
+      { id: Date.now(), text: '', type: 'multiple_choice', options: ['Option 1', 'Option 2'] }
+    ]);
   };
 
-  const updateQuestion = (id: string, updates: Partial<Question>) => {
-    setQuestions(questions.map((q) => (q.id === id ? { ...q, ...updates } : q)));
-  };
-
-  const deleteQuestion = (id: string) => {
-    setQuestions(questions.filter((q) => q.id !== id));
-    if (selectedQuestionId === id) {
-      setSelectedQuestionId(null);
+  const handleRemoveQuestion = (id: number) => {
+    if (questions.length > 1) {
+      setQuestions(questions.filter(q => q.id !== id));
     }
   };
 
-  const reorderQuestions = (startIndex: number, endIndex: number) => {
-    const result = Array.from(questions);
-    const [removed] = result.splice(startIndex, 1);
-    result.splice(endIndex, 0, removed);
-    setQuestions(result);
+  const handleQuestionTextChange = (id: number, text: string) => {
+    setQuestions(questions.map(q => q.id === id ? { ...q, text } : q));
+  };
+
+  const handleQuestionTypeChange = (id: number, type: 'multiple_choice' | 'text') => {
+    setQuestions(questions.map(q => q.id === id ? { ...q, type } : q));
+  };
+
+  const handleOptionChange = (questionId: number, optionIndex: number, value: string) => {
+    setQuestions(questions.map(q => {
+      if (q.id === questionId) {
+        const newOptions = [...q.options];
+        newOptions[optionIndex] = value;
+        return { ...q, options: newOptions };
+      }
+      return q;
+    }));
+  };
+
+  const handleAddOption = (questionId: number) => {
+    setQuestions(questions.map(q => {
+      if (q.id === questionId) {
+        return { ...q, options: [...q.options, `Option ${q.options.length + 1}`] };
+      }
+      return q;
+    }));
+  };
+
+  const handleRemoveOption = (questionId: number, optionIndex: number) => {
+    setQuestions(questions.map(q => {
+      if (q.id === questionId) {
+        const newOptions = q.options.filter((_, idx) => idx !== optionIndex);
+        return { ...q, options: newOptions };
+      }
+      return q;
+    }));
+  };
+
+  const handlePublish = async () => {
+    if (!token) {
+      setError("You must be logged in to publish a survey. Session expired.");
+      return;
+    }
+
+    if (!title.trim()) {
+      setError("Please enter a survey title.");
+      return;
+    }
+
+    // Validate questions
+    for (const q of questions) {
+      if (!q.text.trim()) {
+        setError("All questions must have text.");
+        return;
+      }
+    }
+
+    setIsPublishing(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_URL}/client/campaigns`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title,
+          target_audience: { demographic: targetDemographic },
+          survey_schema: { questions },
+          status: "active",
+          budget_coins: 500
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || "Failed to publish survey");
+
+      alert("Success! Your survey has been published to the Consumer app.");
+      onBack();
+      
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "An error occurred while publishing.");
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   return (
-    <DndProvider backend={HTML5Backend}>
-      <div className="h-screen flex flex-col" style={{ backgroundColor: '#F5F7FA' }}>
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-8 py-4 bg-white"
-          style={{
-            borderBottom: '1px solid #E5E7EB',
-            boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.03)',
-          }}
-        >
-          <div className="flex items-center gap-4">
-            <button
-              onClick={onBack}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <ArrowLeft size={20} style={{ color: '#192A56' }} />
-            </button>
-            <div>
-              <h1
-                style={{
-                  fontFamily: 'Outfit, sans-serif',
-                  fontSize: '24px',
-                  fontWeight: 600,
-                  color: '#192A56',
-                }}
-              >
-                Untitled Survey
-              </h1>
-              <p
-                style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontSize: '14px',
-                  color: '#6B7280',
-                }}
-              >
-                {questions.length} questions • Auto-saved 2 min ago
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* View Mode Toggle */}
-            <div
-              className="flex items-center rounded-full p-1"
-              style={{
-                backgroundColor: '#F0F3FF',
-                border: '1px solid #E5E7EB',
-              }}
-            >
-              <button
-                onClick={() => setViewMode('flow')}
-                className="flex items-center gap-2 px-4 py-2 rounded-full transition-all"
-                style={{
-                  backgroundColor: viewMode === 'flow' ? '#1A45FF' : 'transparent',
-                  color: viewMode === 'flow' ? '#FFFFFF' : '#6B7280',
-                  fontFamily: 'Inter, sans-serif',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                }}
-              >
-                <Network size={16} strokeWidth={2} />
-                Flow
-              </button>
-              <button
-                onClick={() => setViewMode('linear')}
-                className="flex items-center gap-2 px-4 py-2 rounded-full transition-all"
-                style={{
-                  backgroundColor: viewMode === 'linear' ? '#1A45FF' : 'transparent',
-                  color: viewMode === 'linear' ? '#FFFFFF' : '#6B7280',
-                  fontFamily: 'Inter, sans-serif',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                }}
-              >
-                <LayoutList size={16} strokeWidth={2} />
-                Outline
-              </button>
-            </div>
-
-            <button
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full transition-all hover:bg-gray-50"
-              style={{
-                border: '2px solid #1A45FF',
-                color: '#1A45FF',
-                fontFamily: 'Outfit, sans-serif',
-                fontSize: '15px',
-                fontWeight: 600,
-              }}
-            >
-              <Eye size={18} strokeWidth={2} />
-              Test Flow
-            </button>
-            <button
-              className="flex items-center gap-2 px-6 py-2.5 rounded-full transition-all hover:scale-105"
-              style={{
-                backgroundColor: '#1A45FF',
-                color: '#FFFFFF',
-                fontFamily: 'Outfit, sans-serif',
-                fontSize: '15px',
-                fontWeight: 700,
-                boxShadow: '0px 4px 0px #0D2DB8',
-              }}
-            >
-              <Rocket size={18} strokeWidth={2} />
-              Publish
-            </button>
+    <div className="flex flex-col h-full w-full bg-[#F5F7FA]">
+      <div className="bg-white border-b border-[#E5E7EB] px-8 py-6 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={onBack}
+            className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+          >
+            <ArrowLeft size={20} className="text-[#192A56]" />
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-[#192A56] font-heading">Survey Builder</h2>
+            <p className="text-[#6B7280] text-sm mt-1">Design your research campaign</p>
           </div>
         </div>
-
-        {/* Main Content */}
-        <div className="flex-1 flex overflow-hidden">
-          {viewMode === 'linear' ? (
+        
+        <button
+          onClick={handlePublish}
+          disabled={isPublishing}
+          className="flex items-center gap-2 bg-[#1A45FF] text-white px-8 py-3 rounded-full font-bold shadow-[0px_4px_0px_#0D2DB8] transition-all hover:translate-y-[2px] hover:shadow-[0px_2px_0px_#0D2DB8] disabled:opacity-50"
+        >
+          {isPublishing ? 'Publishing...' : (
             <>
-              {/* Left Sidebar */}
-              <LeftSidebar 
-                onAddQuestion={addQuestion}
-                isVisible={isLeftSidebarVisible}
-                onToggleVisibility={() => setIsLeftSidebarVisible(!isLeftSidebarVisible)}
-              />
-
-              {/* Center Canvas */}
-              <CenterCanvas
-                questions={questions}
-                selectedQuestionId={selectedQuestionId}
-                onSelectQuestion={setSelectedQuestionId}
-                onUpdateQuestion={updateQuestion}
-                onDeleteQuestion={deleteQuestion}
-                onReorderQuestions={reorderQuestions}
-              />
-
-              {/* Right Sidebar */}
-              {selectedQuestion && (
-                <RightSidebar 
-                  question={selectedQuestion} 
-                  onUpdateQuestion={updateQuestion}
-                  isVisible={isSidebarVisible}
-                  onToggleVisibility={() => setIsSidebarVisible(!isSidebarVisible)}
-                />
-              )}
-            </>
-          ) : (
-            <>
-              {/* Left Sidebar for Flow Mode */}
-              <LeftSidebar 
-                onAddQuestion={addQuestion}
-                isVisible={isLeftSidebarVisible}
-                onToggleVisibility={() => setIsLeftSidebarVisible(!isLeftSidebarVisible)}
-              />
-
-              {/* Flow Builder Canvas */}
-              <div className="flex-1 relative">
-                <FlowBuilder
-                  questions={questions}
-                  selectedQuestionId={selectedQuestionId}
-                  onSelectQuestion={setSelectedQuestionId}
-                  onUpdateQuestion={updateQuestion}
-                  onDeleteQuestion={deleteQuestion}
-                />
-              </div>
-
-              {/* Right Sidebar */}
-              {selectedQuestion && (
-                <RightSidebar 
-                  question={selectedQuestion} 
-                  onUpdateQuestion={updateQuestion}
-                  isVisible={isSidebarVisible}
-                  onToggleVisibility={() => setIsSidebarVisible(!isSidebarVisible)}
-                />
-              )}
+              <Send size={18} /> Publish to Consumers
             </>
           )}
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-8">
+        <div className="max-w-3xl mx-auto space-y-6">
+          
+          {error && (
+            <div className="p-4 bg-red-50 text-red-600 border border-red-200 rounded-xl font-medium">
+              {error}
+            </div>
+          )}
+
+          <div className="bg-white p-8 rounded-2xl border border-[#E5E7EB] shadow-sm">
+            <h3 className="text-xl font-bold text-[#192A56] font-heading mb-6">Campaign Settings</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-[#374151] mb-2">Survey Title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g., Gen Z Coffee Preferences"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#1A45FF] focus:outline-none"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-[#374151] mb-2">Target Demographic</label>
+                <select 
+                  value={targetDemographic}
+                  onChange={(e) => setTargetDemographic(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#1A45FF] focus:outline-none bg-white"
+                >
+                  <option value="All Ages">All Ages</option>
+                  <option value="18-24">Gen Z (18-24)</option>
+                  <option value="25-34">Millennials (25-34)</option>
+                  <option value="35-44">Gen X (35-44)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-2xl border border-[#E5E7EB] shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-[#192A56] font-heading">Questions</h3>
+              <span className="text-sm font-bold text-[#1A45FF] bg-blue-50 px-3 py-1 rounded-full">
+                {questions.length} / 10
+              </span>
+            </div>
+
+            <div className="space-y-6">
+              {questions.map((q, index) => (
+                <div key={q.id} className="flex gap-4 items-start p-5 border border-gray-100 bg-gray-50 rounded-xl">
+                  
+                  {/* Question Number */}
+                  <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center font-bold text-[#1A45FF] shrink-0">
+                    {index + 1}
+                  </div>
+                  
+                  {/* Question Content */}
+                  <div className="flex-1 space-y-4">
+                    {/* Input & Type Row */}
+                    <div className="flex gap-3">
+                      <input
+                        type="text"
+                        value={q.text}
+                        onChange={(e) => handleQuestionTextChange(q.id, e.target.value)}
+                        placeholder="Enter your question here..."
+                        className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1A45FF] focus:outline-none"
+                      />
+                      <select
+                        value={q.type}
+                        onChange={(e) => handleQuestionTypeChange(q.id, e.target.value as 'multiple_choice' | 'text')}
+                        className="w-48 px-3 py-3 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#1A45FF] text-sm text-gray-700"
+                      >
+                        <option value="multiple_choice">Multiple Choice</option>
+                        <option value="text">Short Answer (Text)</option>
+                      </select>
+                    </div>
+
+                    {/* Options Builder (Only show if multiple choice) */}
+                    {q.type === 'multiple_choice' && (
+                      <div className="pl-2 space-y-2">
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Answers Options</label>
+                        {q.options.map((opt, optIndex) => (
+                          <div key={optIndex} className="flex items-center gap-2">
+                            <div className="w-4 h-4 rounded-full border border-gray-300 flex-shrink-0" />
+                            <input
+                              type="text"
+                              value={opt}
+                              onChange={(e) => handleOptionChange(q.id, optIndex, e.target.value)}
+                              placeholder={`Option ${optIndex + 1}`}
+                              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-[#1A45FF]"
+                            />
+                            {q.options.length > 2 && (
+                              <button 
+                                onClick={() => handleRemoveOption(q.id, optIndex)}
+                                className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                              >
+                                <X size={16} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => handleAddOption(q.id)}
+                          className="text-sm font-semibold text-[#1A45FF] hover:underline flex items-center gap-1 mt-2"
+                        >
+                          <Plus size={14} /> Add Option
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Delete Question Button */}
+                  <button 
+                    onClick={() => handleRemoveQuestion(q.id)}
+                    className="w-10 h-10 flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={handleAddQuestion}
+              disabled={questions.length >= 10}
+              className="mt-6 w-full py-4 border-2 border-dashed border-[#1A45FF] text-[#1A45FF] rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus size={20} /> Add Another Question
+            </button>
+          </div>
+
         </div>
       </div>
-    </DndProvider>
+    </div>
   );
 }

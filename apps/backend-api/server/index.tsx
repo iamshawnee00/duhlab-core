@@ -180,7 +180,7 @@ app.post("/make-server-e7b4487d/client/complete-onboarding", async (c: any) => {
 });
 
 // ==========================================
-// DASHBOARD REAL-TIME DATA
+// DASHBOARD REAL-TIME DATA & CAMPAIGNS
 // ==========================================
 
 app.get("/make-server-e7b4487d/client/dashboard-stats", async (c: any) => {
@@ -236,7 +236,7 @@ app.get("/make-server-e7b4487d/client/campaigns", async (c: any) => {
       `)
       .eq('client_id', user.id)
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(20); // Upped the limit so they can see more surveys
 
     if (dbError) throw dbError;
 
@@ -255,9 +255,165 @@ app.get("/make-server-e7b4487d/client/campaigns", async (c: any) => {
   }
 });
 
+// NEW: The Insights Data Route
+app.get("/make-server-e7b4487d/client/campaign-results/:id", async (c: any) => {
+  try {
+    const token = c.req.header('Authorization')?.split(' ')[1];
+    if (!token) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+    if (authError || !user) return c.json({ error: "Invalid session" }, 401);
+
+    const campaignId = c.req.param('id');
+
+    // Make sure the client owns this campaign
+    const { data: campaign, error: campError } = await supabaseAdmin
+      .from('campaigns')
+      .select('client_id, survey_schema')
+      .eq('id', campaignId)
+      .single();
+
+    if (campError || !campaign) return c.json({ error: "Campaign not found" }, 404);
+    if (campaign.client_id !== user.id) return c.json({ error: "Unauthorized access" }, 403);
+
+    // Get all the raw answers from the events table
+    const { data: events, error: eventsError } = await supabaseAdmin
+      .from('events')
+      .select('payload, created_at')
+      .eq('event_type', 'survey_completed')
+      .eq('reference_id', campaignId);
+
+    if (eventsError) throw eventsError;
+
+    return c.json({ success: true, schema: campaign.survey_schema, responses: events || [] });
+  } catch (error) {
+    console.error("Fetch Results Error:", error);
+    return c.json({ error: "Failed to fetch insights" }, 500);
+  }
+});
+
+app.post("/make-server-e7b4487d/client/campaigns", async (c: any) => {
+  try {
+    const token = c.req.header('Authorization')?.split(' ')[1];
+    if (!token) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+    if (authError || !user) return c.json({ error: "Invalid session" }, 401);
+
+    const { title, target_audience, survey_schema, status, budget_coins } = await c.req.json();
+
+    if (!title) {
+      return c.json({ error: "Campaign title is required" }, 400);
+    }
+
+    // 1. Insert the new campaign
+    const newCampaign = {
+      client_id: user.id,
+      title,
+      target_audience: target_audience || {},
+      survey_schema: survey_schema || {},
+      status: status || 'active', 
+      budget_coins: budget_coins || 0,
+      created_at: new Date().toISOString()
+    };
+
+    const { data: campaignData, error: dbError } = await supabaseAdmin
+      .from('campaigns')
+      .insert([newCampaign])
+      .select('id')
+      .single();
+
+    if (dbError) throw dbError;
+
+    // 2. Initialize the empty analytics tracker
+    const { error: analyticsError } = await supabaseAdmin
+      .from('campaign_analytics')
+      .insert([{
+        campaign_id: campaignData.id,
+        total_views: 0,
+        total_completions: 0,
+        results_tally: {}
+      }]);
+
+    if (analyticsError) console.error("Failed to init analytics:", analyticsError);
+
+    return c.json({ success: true, campaignId: campaignData.id, message: "Survey created successfully" });
+  } catch (error) {
+    console.error("Create Campaign Error:", error);
+    return c.json({ error: "Failed to create survey campaign" }, 500);
+  }
+});
+
 // ==========================================
 // GAMEPLAY & CORE LOGIC
 // ==========================================
+
+app.get("/make-server-e7b4487d/consumer/campaigns", async (c: any) => {
+  try {
+    const token = c.req.header('Authorization')?.split(' ')[1];
+    if (!token) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+    if (authError || !user) return c.json({ error: "Invalid session" }, 401);
+
+    const { data: campaigns, error: dbError } = await supabaseAdmin
+      .from('campaigns')
+      .select('id, title, budget_coins, survey_schema, created_at')
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+
+    if (dbError) throw dbError;
+
+    return c.json({ success: true, campaigns: campaigns || [] });
+  } catch (error) {
+    console.error("Fetch Consumer Campaigns Error:", error);
+    return c.json({ error: "Failed to fetch campaigns" }, 500);
+  }
+});
+
+app.post("/make-server-e7b4487d/consumer/submit-survey", async (c: any) => {
+  try {
+    const token = c.req.header('Authorization')?.split(' ')[1];
+    if (!token) return c.json({ error: "Unauthorized" }, 401);
+
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+    if (authError || !user) return c.json({ error: "Invalid session" }, 401);
+
+    const { campaignId, answers, rewardCoins } = await c.req.json();
+    if (!campaignId) return c.json({ error: "Missing campaign ID" }, 400);
+
+    // 1. Log the consumer's answers into the events table
+    await supabaseAdmin.from('events').insert([{
+      user_id: user.id,
+      event_type: 'survey_completed',
+      reference_id: campaignId,
+      payload: { answers }
+    }]);
+
+    // 2. Award coins to the consumer
+    const { data: coinData } = await supabaseAdmin.from('user_coins').select('coins').eq('user_id', user.id).single();
+    const currentCoins = coinData ? (coinData as any).coins : 0;
+    
+    const coinsToAward = rewardCoins || 100; 
+    const newBalance = currentCoins + coinsToAward;
+
+    await supabaseAdmin.from('user_coins').update({ coins: newBalance }).eq('user_id', user.id);
+
+    // 3. Update the B2B Client's Analytics (increment total completions)
+    const { data: analyticsData } = await supabaseAdmin.from('campaign_analytics').select('*').eq('campaign_id', campaignId).single();
+    if (analyticsData) {
+      const currentCompletions = (analyticsData as any).total_completions || 0;
+      await supabaseAdmin.from('campaign_analytics')
+        .update({ total_completions: currentCompletions + 1 })
+        .eq('campaign_id', campaignId);
+    }
+
+    return c.json({ success: true, newBalance, coinsEarned: coinsToAward, message: "Survey completed and coins awarded!" });
+  } catch (error) {
+    console.error("Submit Survey Error:", error);
+    return c.json({ error: "Failed to submit survey" }, 500);
+  }
+});
 
 app.post("/make-server-e7b4487d/guest-login", async (c: any) => {
   try {
@@ -300,7 +456,6 @@ app.get("/make-server-e7b4487d/session", async (c: any) => {
   return c.json({ success: true, userId: user.id, user: userData });
 });
 
-// Start the Node.js Server
 const port = 3001;
 console.log(`DUHlab Backend is running on http://localhost:${port}`);
 serve({ fetch: app.fetch, port });
